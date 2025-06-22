@@ -5,12 +5,18 @@ import time
 
 arr = []
 time_spent = 0.0
+repeat_sort = False
 
 def bubble_sort():
-    global time_spent
+    global repeat_sort, time_spent  
+    if repeat_sort:
+        messagebox.showinfo("Повтор", "Массив уже отсортирован")  
+        return
+    
     if not arr:
         messagebox.showwarning("Ошибка", "Сначала создайте массив!")
         return
+    
     start = time.time()
     for i in range(len(arr) - 1):
         swapped = False
@@ -23,16 +29,18 @@ def bubble_sort():
     end = time.time()
     time_spent = end - start
     update_array_display()
-    messagebox.showinfo("Успех", f"Массив отсортирован за {time_spent:.6f} сек.")
+    repeat_sort = True
+    messagebox.showinfo("Успех", f"Массив отсортирован за {time_spent:.20f} сек.")
 
 def generate_array():
-    global arr
+    global arr, repeat_sort 
     try:
         size = int(entry_size.get())
         if size <= 0:
             raise ValueError
         arr = [random.randint(0, 1000000) for _ in range(size)]
         update_array_display()
+        repeat_sort = False 
     except ValueError:
         messagebox.showerror("Ошибка", "Введите корректный размер массива!")
 
