@@ -13,6 +13,207 @@ arr = []
 time_spent = 0.0
 repeat_sort = False
 
+def upload_to_github():
+    if not arr:
+        messagebox.showwarning("Ошибка", "Сначала создайте массив!")
+        return
+    
+    # Запрос токена GitHub
+    token = simpledialog.askstring("GitHub Token", "Введите ваш GitHub Personal Access Token:", show='*')
+    if not token:
+        return
+    
+    # 1. Проверка валидности токена и его прав
+    try:
+        check_req = urllib.request.Request(
+            "https://api.github.com/user",
+            headers={
+                "Authorization": f"token {token}",
+                "User-Agent": "PythonApp"
+            }
+        )
+        with urllib.request.urlopen(check_req) as response:
+            user_data = json.loads(response.read().decode())
+            scopes = response.headers.get('X-OAuth-Scopes', '')
+            
+            # Проверка наличия права repo
+            if 'repo' not in scopes:
+                messagebox.showerror("Ошибка прав", 
+                                   "Токен не имеет права 'repo'!\n"
+                                   "Создайте новый токен с полным доступом к репозиториям.\n"
+                                   "При создании токена отметьте галочку 'repo' в разделе Permissions.")
+                return
+    except urllib.error.HTTPError as e:
+        error_msg = e.read().decode()
+        try:
+            error_data = json.loads(error_msg)
+            detailed_msg = error_data.get("message", "Неизвестная ошибка")
+            messagebox.showerror("Ошибка токена", 
+                               f"Ошибка проверки токена ({e.code}):\n{detailed_msg}")
+        except:
+            messagebox.showerror("Ошибка токена", f"HTTP ошибка {e.code}: {error_msg}")
+        return
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось проверить токен: {str(e)}")
+        return
+    
+    # 2. Запрос данных репозитория
+    repo_owner = simpledialog.askstring("Репозиторий", "Владелец репозитория (ваш никнейм на GitHub):")
+    if not repo_owner:
+        return
+    
+    repo_name = simpledialog.askstring("Репозиторий", "Имя репозитория (существующего):")
+    if not repo_name:
+        return
+    
+    # 3. Проверка существования репозитория и прав доступа
+    try:
+        repo_req = urllib.request.Request(
+            f"https://api.github.com/repos/{repo_owner}/{repo_name}",
+            headers={
+                "Authorization": f"token {token}",
+                "User-Agent": "PythonApp"
+            }
+        )
+        with urllib.request.urlopen(repo_req) as response:
+            repo_data = json.loads(response.read().decode())
+            
+            # Проверка прав на запись
+            permissions = repo_data.get('permissions', {})
+            if not permissions.get('push', False):
+                messagebox.showerror("Ошибка доступа", 
+                                   "У вас нет прав на запись в этот репозиторий!\n"
+                                   "Проверьте:\n"
+                                   "1. Правильность написания владельца и репозитория\n"
+                                   "2. Что репозиторий не принадлежит организации с ограниченным доступом\n"
+                                   "3. Что токен имеет право 'repo'")
+                return
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            messagebox.showerror("Ошибка", 
+                               "Репо не найден!\n"
+                               f"Проверьте что репозиторий {repo_owner}/{repo_name} существует\n"
+                               "и вы имеете к нему доступ.")
+        else:
+            error_msg = e.read().decode()
+            try:
+                error_data = json.loads(error_msg)
+                detailed_msg = error_data.get("message", "Неизвестная ошибка")
+                messagebox.showerror("Ошибка", 
+                                   f"Ошибка доступа к репозиторию ({e.code}):\n{detailed_msg}")
+            except:
+                messagebox.showerror("Ошибка", f"HTTP ошибка {e.code}: {error_msg}")
+        return
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Ошибка при проверке репозитория: {str(e)}")
+        return
+    
+    # 4. Запрос пути к файлу
+    file_path = simpledialog.askstring("Файл", 
+                                     "Путь к файлу в репозитории:\n"
+                                     "Примеры:\n"
+                                     "- data/array.txt (для файла в папке data)\n"
+                                     "- array.txt (для файла в корне репозитория)",
+                                     initialvalue="array.txt")
+    if not file_path:
+        return
+    
+    # 5. Запрос сообщения коммита
+    commit_message = simpledialog.askstring("Коммит", 
+                                          "Сообщение коммита:",
+                                          initialvalue="Обновление массива сортировки")
+    if not commit_message:
+        return
+
+    try:
+        # Подготовка содержимого файла
+        content = f"{len(arr)}\n" + " ".join(map(str, arr))
+        content_bytes = content.encode("utf-8")
+        content_base64 = base64.b64encode(content_bytes).decode("utf-8")
+        
+        # Формирование URL API
+        url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_path}"
+        
+        # Подготовка данных для запроса
+        data = {
+            "message": commit_message,
+            "content": content_base64,
+            "branch": "main"
+        }
+        
+        # Проверка существования файла (для получения SHA)
+        sha = None
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "Authorization": f"token {token}",
+                    "User-Agent": "PythonApp"
+                }
+            )
+            with urllib.request.urlopen(req) as response:
+                existing_data = json.loads(response.read().decode())
+                sha = existing_data.get("sha")
+        except urllib.error.HTTPError as e:
+            if e.code != 404:  # 404 - файл не существует (нормально для нового файла)
+                error_msg = e.read().decode()
+                error_data = json.loads(error_msg) if error_msg else {}
+                detailed_msg = error_data.get("message", "Неизвестная ошибка")
+                messagebox.showerror("Ошибка", 
+                                   f"Ошибка при проверке файла ({e.code}):\n{detailed_msg}")
+                return
+        
+        # Если файл существует, добавляем SHA для обновления
+        if sha:
+            data["sha"] = sha
+        
+        # Отправка запроса на создание/обновление файла
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(data).encode("utf-8"),
+            headers={
+                "Authorization": f"token {token}",
+                "User-Agent": "PythonApp",
+                "Content-Type": "application/json"
+            },
+            method="PUT"
+        )
+        
+        # Обработка ответа
+        with urllib.request.urlopen(req) as response:
+            if response.status in (200, 201):
+                messagebox.showinfo("Успех", "Файл успешно загружен на GitHub!")
+            else:
+                response_data = json.loads(response.read().decode())
+                error_msg = response_data.get("message", "Неизвестная ошибка")
+                messagebox.showerror("Ошибка", f"Ошибка при загрузке: {error_msg}")
+    
+    except urllib.error.HTTPError as e:
+        error_msg = e.read().decode()
+        try:
+            error_data = json.loads(error_msg)
+            detailed_msg = error_data.get("message", "Неизвестная ошибка")
+            documentation_url = error_data.get("documentation_url", "")
+            
+            # Специфические решения для распространенных ошибок
+            solution = ""
+            if "Resource not accessible by integration" in detailed_msg:
+                solution = "\nРешение: Токен не имеет нужных прав. Создайте новый токен с правами 'repo'."
+            elif "insufficient_scope" in detailed_msg:
+                solution = "\nРешение: Токену не хватает прав. Добавьте право 'repo' при создании токена."
+            elif "name already exists" in detailed_msg:
+                solution = "\nРешение: Файл с таким именем уже существует. Укажите другое имя файла."
+            elif "too_large" in detailed_msg:
+                solution = "\nРешение: Файл слишком большой. GitHub ограничивает размер файлов до 100MB."
+            
+            messagebox.showerror("Ошибка загрузки", 
+                               f"HTTP ошибка {e.code}:\n"
+                               f"{detailed_msg}{solution}\n"
+                               f"Документация: {documentation_url}")
+        except:
+            messagebox.showerror("Ошибка", f"HTTP ошибка {e.code}: {error_msg}")
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось загрузить файл на GitHub:\n{str(e)}")
 
 def download_from_github():
     # Запрашиваем URL у пользователя
@@ -231,7 +432,8 @@ tk.Button(frame_buttons, text="Сохранить в файл", width=15, comman
 tk.Button(frame_buttons, text="Загрузить из файла", width=15, command=load_array).grid(row=1, column=0, padx=5, pady=5)
 tk.Button(frame_buttons, text="Загрузить по URL", width=15, command=load_array_from_url).grid(row=1, column=1, padx=5, pady=5)
 tk.Button(frame_buttons, text="Загрузить с GitHub", width=15, command=download_from_github).grid(row=0, column=2, padx=5, pady=5)
-tk.Button(frame_buttons, text="Время сортировки", width=15, command=show_time).grid(row=1, column=2, padx=5, pady=5)
+tk.Button(frame_buttons, text="Выгрузить на GitHub", width=15, command=upload_to_github).grid(row=1, column=2, padx=5, pady=5)
+tk.Button(frame_buttons, text="Время сортировки", width=15, command=show_time).grid(row=2, column=0, padx=5, pady=5)
 
 frame_array = tk.LabelFrame(root, text="Массив", padx=10, pady=10)
 frame_array.pack(fill="both", expand=True, padx=10, pady=10)
