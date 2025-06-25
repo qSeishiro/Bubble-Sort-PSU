@@ -170,10 +170,10 @@ class App(TKMT.ThemedTKinterFrame):
             if not swapped:
                 break
         end = time.time()
-        self.time_spent = end - start
+        self.time_spent = (end - start)*1000
         self.repeat_sort = True
         self.update_array_display()
-        messagebox.showinfo("Успех", f"Массив отсортирован за {self.time_spent:.20f} сек.")
+        messagebox.showinfo("Успех", f"Массив отсортирован за {self.time_spent:.3f} мс.")
 
 
 
@@ -217,7 +217,7 @@ class App(TKMT.ThemedTKinterFrame):
         if self.time_spent == 0.0:
             messagebox.showinfo("Время сортировки", "Сначала отсортируйте массив!")
         else:
-            messagebox.showinfo("Время сортировки", f"{self.time_spent:.6f} сек.")
+            messagebox.showinfo("Время сортировки", f"{self.time_spent:.3f} мс.")
 
 
 
